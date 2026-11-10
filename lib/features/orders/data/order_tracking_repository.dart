@@ -34,10 +34,13 @@ class OrderTrackingRepository {
   ///
   /// Emits the order immediately and then every time its status changes.
   Stream<Order> watchOrder(String orderId) {
-    throw UnimplementedError('F3: implement OrderTrackingRepository.watchOrder');
+    throw UnimplementedError(
+        'F3: implement OrderTrackingRepository.watchOrder');
   }
 }
 
 final ordersProvider = FutureProvider<List<Order>>(
-  (ref) => ref.watch(orderTrackingRepositoryProvider).getOrders(),
+  (ref) => ref.watch(orderTrackingRepositoryProvider).orderApi.getOrders(
+        forceRefresh: true,
+      ),
 );

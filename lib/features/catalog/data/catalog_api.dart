@@ -21,8 +21,10 @@ class CatalogApi {
     String? cursor,
     int limit = 10,
     bool dealsOnly = false,
+    bool forceRefresh = true,
   }) async {
-    final json = await _client.get('/v1/products', query: {
+    final json =
+        await _client.get('/v1/products', forceRefresh: forceRefresh, query: {
       if (categoryId != null) 'category': categoryId,
       if (cursor != null) 'cursor': cursor,
       'limit': '$limit',
@@ -35,8 +37,11 @@ class CatalogApi {
   }
 
   Future<List<Product>> search(String query) async {
-    final json = await _client.get('/v1/products/search', query: {'q': query})
-        as Map<String, dynamic>;
+    final json = await _client.get(
+      '/v1/products/search',
+      query: {'q': query},
+      forceRefresh: true,
+    ) as Map<String, dynamic>;
     return ProductDto.listFromJson(json['items']);
   }
 

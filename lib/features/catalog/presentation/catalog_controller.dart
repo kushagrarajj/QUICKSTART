@@ -61,18 +61,20 @@ final catalogControllerProvider =
 
 class CatalogController extends FamilyNotifier<CatalogState, String> {
   static const pageSize = 10;
+  int _generation = 0;
 
   CatalogRepository get _repo => ref.read(catalogRepositoryProvider);
 
   @override
   CatalogState build(String categoryId) {
-    Future.microtask(_loadFirstPage);
+    Future.microtask(() => _loadFirstPage(_generation));
     return const CatalogState(isLoadingFirstPage: true);
   }
 
-  Future<void> _loadFirstPage() async {
+  Future<void> _loadFirstPage(int generation) async {
     try {
       final page = await _repo.getPage(categoryId: arg, limit: pageSize);
+      if (generation != _generation) return;
       state = CatalogState(
         items: page.items,
         nextCursor: page.nextCursor,
@@ -80,6 +82,7 @@ class CatalogController extends FamilyNotifier<CatalogState, String> {
         fromCache: page.fromCache,
       );
     } on ApiException catch (e) {
+      if (generation != _generation) return;
       state = state.copyWith(
         isLoadingFirstPage: false,
         errorMessage: e.message,
@@ -89,14 +92,18 @@ class CatalogController extends FamilyNotifier<CatalogState, String> {
 
   /// Retries the first page after an error.
   Future<void> retry() async {
+    final generation = ++_generation;
     state = const CatalogState(isLoadingFirstPage: true);
-    await _loadFirstPage();
+    await _loadFirstPage(generation);
   }
 
   /// Loads the next page. Called by the UI when the user scrolls near the
   /// end of the list.
   Future<void> loadMore() async {
-    if (!state.hasMore) return;
+    if (!state.hasMore || state.isLoadingMore || state.isLoadingFirstPage) {
+      return;
+    }
+    final generation = _generation;
     state = state.copyWith(isLoadingMore: true, clearError: true);
     try {
       final page = await _repo.getPage(
@@ -104,6 +111,7 @@ class CatalogController extends FamilyNotifier<CatalogState, String> {
         cursor: state.nextCursor,
         limit: pageSize,
       );
+      if (generation != _generation) return;
       state = state.copyWith(
         items: [...state.items, ...page.items],
         nextCursor: page.nextCursor,
@@ -113,15 +121,22 @@ class CatalogController extends FamilyNotifier<CatalogState, String> {
         fromCache: state.fromCache || page.fromCache,
       );
     } on ApiException catch (e) {
+      if (generation != _generation) return;
       state = state.copyWith(isLoadingMore: false, errorMessage: e.message);
     }
   }
 
   /// Pull-to-refresh: reloads from the first page.
   Future<void> refresh() async {
+    final generation = ++_generation;
     state = state.copyWith(isRefreshing: true, clearError: true);
     try {
-      final page = await _repo.getPage(categoryId: arg, limit: pageSize);
+      final page = await _repo.getPage(
+        categoryId: arg,
+        limit: pageSize,
+        forceRefresh: true,
+      );
+      if (generation != _generation) return;
       state = CatalogState(
         items: page.items,
         nextCursor: page.nextCursor,
@@ -129,6 +144,7 @@ class CatalogController extends FamilyNotifier<CatalogState, String> {
         fromCache: page.fromCache,
       );
     } on ApiException catch (e) {
+      if (generation != _generation) return;
       state = state.copyWith(isRefreshing: false, errorMessage: e.message);
     }
   }

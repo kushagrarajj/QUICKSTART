@@ -33,6 +33,29 @@ class UpdatePolicy {
     required String minSupportedVersion,
     required String latestVersion,
   }) {
-    throw UnimplementedError('F2: implement UpdatePolicy.evaluate');
+    final current = _parse(currentVersion);
+    final minimum = _parse(minSupportedVersion);
+    final latest = _parse(latestVersion);
+    if (current == null || minimum == null || latest == null) {
+      return UpdateRequirement.none;
+    }
+    if (_compare(current, minimum) < 0) return UpdateRequirement.required;
+    if (_compare(current, latest) < 0) return UpdateRequirement.optional;
+    return UpdateRequirement.none;
+  }
+
+  static List<int>? _parse(String version) {
+    if (!RegExp(r'^\d+(?:\.\d+)*$').hasMatch(version)) return null;
+    return version.split('.').map(int.parse).toList();
+  }
+
+  static int _compare(List<int> left, List<int> right) {
+    final length = left.length > right.length ? left.length : right.length;
+    for (var i = 0; i < length; i++) {
+      final a = i < left.length ? left[i] : 0;
+      final b = i < right.length ? right[i] : 0;
+      if (a != b) return a.compareTo(b);
+    }
+    return 0;
   }
 }

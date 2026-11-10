@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/config_repository.dart';
@@ -10,7 +13,17 @@ final appConfigControllerProvider =
 
 class AppConfigController extends Notifier<AppConfig> {
   @override
-  AppConfig build() => AppConfig.defaults();
+  AppConfig build() {
+    final subscription =
+        ref.read(configRepositoryProvider).remoteUpdates.listen(
+      (_) => unawaited(refresh()),
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Remote config update listener failed: $error\n$stackTrace');
+      },
+    );
+    ref.onDispose(() => unawaited(subscription.cancel()));
+    return AppConfig.defaults();
+  }
 
   /// Used at startup with the config loaded during bootstrap.
   void hydrate(AppConfig config) => state = config;

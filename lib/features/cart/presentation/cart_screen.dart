@@ -11,6 +11,7 @@ import '../application/cart_controller.dart';
 import '../data/coupon_api.dart';
 import '../domain/cart.dart';
 import '../domain/cart_pricing.dart';
+import '../domain/reconciliation.dart';
 
 class CartScreen extends ConsumerWidget {
   const CartScreen({super.key});
@@ -23,49 +24,83 @@ class CartScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('My cart')),
-      body: cart.isEmpty
-          ? const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('🛒', style: TextStyle(fontSize: 48)),
-                  SizedBox(height: 8),
-                  Text('Your cart is empty'),
-                ],
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                if (pricing.amountForFreeDeliveryPaise > 0)
-                  Card(
-                    color: Colors.green.shade50,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        'Add ${formatMoney(pricing.amountForFreeDeliveryPaise)} '
-                        'more for FREE delivery 🛵',
-                      ),
+      body: Column(
+        children: [
+          if (!config.storeOpen)
+            _StoreClosedBanner(message: config.storeClosedMessage),
+          Expanded(
+            child: cart.isEmpty
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('🛒', style: TextStyle(fontSize: 48)),
+                        SizedBox(height: 8),
+                        Text('Your cart is empty'),
+                      ],
                     ),
-                  ),
-                Card(
-                  child: Column(
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(12),
                     children: [
-                      for (final line in cart.lines) _CartLineTile(line: line),
+                      if (pricing.amountForFreeDeliveryPaise > 0)
+                        Card(
+                          color: Colors.green.shade50,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              'Add ${formatMoney(pricing.amountForFreeDeliveryPaise)} '
+                              'more for FREE delivery 🛵',
+                            ),
+                          ),
+                        ),
+                      Card(
+                        child: Column(
+                          children: [
+                            for (final line in cart.lines)
+                              _CartLineTile(line: line),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const _CouponSection(),
+                      const SizedBox(height: 8),
+                      _BillDetails(pricing: pricing),
+                      const SizedBox(height: 80),
                     ],
                   ),
-                ),
-                const SizedBox(height: 8),
-                const _CouponSection(),
-                const SizedBox(height: 8),
-                _BillDetails(pricing: pricing),
-                const SizedBox(height: 80),
-              ],
+          ),
+        ],
+      ),
+      bottomNavigationBar: cart.isEmpty
+          ? null
+          : _PlaceOrderBar(
+              totalPaise: pricing.totalPaise,
+              storeOpen: config.storeOpen,
             ),
-      bottomNavigationBar:
-          cart.isEmpty ? null : _PlaceOrderBar(totalPaise: pricing.totalPaise),
     );
   }
+}
+
+class _StoreClosedBanner extends StatelessWidget {
+  const _StoreClosedBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.orange.shade100,
+        child: SizedBox(
+          width: double.infinity,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              message.isEmpty ? 'The store is closed right now.' : message,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      );
 }
 
 class _CartLineTile extends ConsumerWidget {
@@ -242,24 +277,31 @@ class _BillDetails extends StatelessWidget {
 }
 
 class _PlaceOrderBar extends ConsumerWidget {
-  const _PlaceOrderBar({required this.totalPaise});
+  const _PlaceOrderBar({
+    required this.totalPaise,
+    required this.storeOpen,
+  });
 
   final int totalPaise;
+  final bool storeOpen;
 
   Future<void> _placeOrder(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final result =
         await ref.read(checkoutControllerProvider.notifier).placeOrder();
+    if (!context.mounted) return;
     switch (result) {
       case CheckoutSuccess(:final order):
         navigator.pushReplacement(MaterialPageRoute<void>(
           builder: (_) => OrderSuccessScreen(order: order),
         ));
-      case CheckoutNeedsReview():
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Your cart was updated. Please review it.'),
-        ));
+      case CheckoutNeedsReview review:
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => _CheckoutReviewDialog(result: review),
+        );
       case CheckoutFailure(:final message):
         messenger.showSnackBar(SnackBar(content: Text(message)));
     }
@@ -267,8 +309,8 @@ class _PlaceOrderBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final placing = ref
-        .watch(checkoutControllerProvider.select((s) => s.isPlacingOrder));
+    final placing =
+        ref.watch(checkoutControllerProvider.select((s) => s.isPlacingOrder));
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -277,7 +319,8 @@ class _PlaceOrderBar extends ConsumerWidget {
             minimumSize: const Size.fromHeight(52),
             backgroundColor: Colors.green.shade800,
           ),
-          onPressed: () => _placeOrder(context, ref),
+          onPressed:
+              placing || !storeOpen ? null : () => _placeOrder(context, ref),
           child: Row(
             children: [
               Text(formatMoney(totalPaise),
@@ -292,11 +335,77 @@ class _PlaceOrderBar extends ConsumerWidget {
                       strokeWidth: 2, color: Colors.white),
                 )
               else
-                const Text('Place order  ▶'),
+                Text(storeOpen ? 'Place order  ▶' : 'Store closed'),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+class _CheckoutReviewDialog extends StatelessWidget {
+  const _CheckoutReviewDialog({required this.result});
+
+  final CheckoutNeedsReview result;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = result.reconciliation.changes
+        .map((change) => _changeDescription(change))
+        .toList();
+    return AlertDialog(
+      title: const Text('Review your updated cart'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (result.message != null) Text(result.message!),
+            for (final line in lines)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('• $line'),
+              ),
+            const SizedBox(height: 8),
+            const Text('Review the updated items and total before placing '
+                'your order again.'),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('I have reviewed the changes'),
+        ),
+      ],
+    );
+  }
+
+  String _changeDescription(CartChange change) => switch (change) {
+        PriceChanged(
+          :final productId,
+          :final oldPricePaise,
+          :final newPricePaise,
+          :final productName,
+        ) =>
+          '${productName ?? productId} price changed from '
+              '${formatMoney(oldPricePaise)} to '
+              '${formatMoney(newPricePaise)}.',
+        OutOfStock(:final productId, :final productName) =>
+          '${productName ?? productId} is out of stock and was removed.',
+        QuantityReduced(
+          :final productId,
+          :final requestedQuantity,
+          :final availableQuantity,
+          :final productName,
+        ) =>
+          '${productName ?? productId} quantity changed from '
+              '$requestedQuantity to '
+              '$availableQuantity.',
+        ProductUnavailable(:final productId, :final productName) =>
+          '${productName ?? productId} is no longer sold and was removed.',
+        CouponRemoved(:final code, :final reason) =>
+          'Coupon $code was removed ($reason).',
+      };
 }

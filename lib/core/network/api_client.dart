@@ -28,9 +28,14 @@ class ApiClient {
 
   final Map<String, _CachedResponse> _responseCache = {};
 
-  Future<dynamic> get(String path, {Map<String, String> query = const {}}) {
+  Future<dynamic> get(
+    String path, {
+    Map<String, String> query = const {},
+    bool forceRefresh = false,
+  }) {
     return _getWithRetry(
       TransportRequest(method: 'GET', path: path, query: query),
+      forceRefresh: forceRefresh,
     );
   }
 
@@ -49,9 +54,13 @@ class ApiClient {
     );
   }
 
-  Future<dynamic> _getWithRetry(TransportRequest request) async {
+  Future<dynamic> _getWithRetry(
+    TransportRequest request, {
+    bool forceRefresh = false,
+  }) async {
     final cached = _responseCache[request.cacheKey];
-    if (cached != null &&
+    if (!forceRefresh &&
+        cached != null &&
         _clock().difference(cached.storedAt) < responseCacheTtl) {
       return jsonDecode(cached.body);
     }

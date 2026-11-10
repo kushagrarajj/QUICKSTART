@@ -25,11 +25,14 @@ final searchControllerProvider =
 );
 
 class ProductSearchController extends Notifier<SearchState> {
+  int _requestId = 0;
+
   @override
   SearchState build() => const SearchState();
 
   /// Called on every keystroke of the search field.
   Future<void> search(String query) async {
+    final requestId = ++_requestId;
     if (query.trim().isEmpty) {
       state = const SearchState();
       return;
@@ -38,11 +41,16 @@ class ProductSearchController extends Notifier<SearchState> {
     try {
       final results =
           await ref.read(catalogRepositoryProvider).search(query.trim());
+      if (requestId != _requestId) return;
       state = SearchState(query: query, results: results);
     } on ApiException catch (e) {
+      if (requestId != _requestId) return;
       state = SearchState(query: query, errorMessage: e.message);
     }
   }
 
-  void clear() => state = const SearchState();
+  void clear() {
+    _requestId++;
+    state = const SearchState();
+  }
 }

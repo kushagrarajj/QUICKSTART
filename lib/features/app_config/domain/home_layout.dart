@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Sections the home screen knows how to render.
 enum HomeSection { banner, categories, deals, allProducts }
 
@@ -23,6 +25,27 @@ class HomeLayout {
   ];
 
   static List<HomeSection> parse(String? rawJson) {
-    throw UnimplementedError('F2: implement HomeLayout.parse');
+    if (rawJson == null || rawJson.isEmpty) return defaultSections;
+    try {
+      final decoded = jsonDecode(rawJson);
+      if (decoded is! List) return defaultSections;
+      final sections = <HomeSection>[];
+      for (final item in decoded) {
+        if (item is! String) continue;
+        final section = switch (item) {
+          'banner' => HomeSection.banner,
+          'categories' => HomeSection.categories,
+          'deals' => HomeSection.deals,
+          'all_products' => HomeSection.allProducts,
+          _ => null,
+        };
+        if (section != null && !sections.contains(section)) {
+          sections.add(section);
+        }
+      }
+      return sections.isEmpty ? defaultSections : sections;
+    } on FormatException {
+      return defaultSections;
+    }
   }
 }
